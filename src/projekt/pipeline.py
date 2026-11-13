@@ -16,11 +16,12 @@ AA_TO_IDX = {aa: i for i, aa in enumerate(AMINO_ACIDS)}
 VOCAB_SIZE = len(AMINO_ACIDS)  # N = 22
 PAD_IDX = AA_TO_IDX["PAD"]
 
-# Sample, hardocoded GO terms for each ontology (for demonstration purposes). SHOULD BE CHANGED LATER
+## GO vocabularies created by build_vocab.py (one GO ID per line)
+VOCAB_DIR = Path("data/vocab")
+
 GO_VOCABULARY = {
-    "BP": ["GO:0008150", "GO:0009987", "GO:0008152"],  # Biological Process
-    "MF": ["GO:0003674", "GO:0005488"],                # Molecular Function
-    "CC": ["GO:0005575", "GO:0005623", "GO:0005886", "GO:0043226"]  # Cellular Component
+    ontology: (VOCAB_DIR / f"{ontology}.txt").read_text().split()
+    for ontology in ("BP", "MF", "CC")
 }
 
 #LOAD DATASET
@@ -28,7 +29,7 @@ GO_VOCABULARY = {
 class ProteinDataset(Dataset):
     def __init__(self, fasta_file: str, max_len: int = 1024):
         """
-        Reads a FASTA file, encodes sequences, and prepares masks.
+        Reads a FASTA file, encodes sequences, and prepares masks
         """
         self.max_len = max_len
         self.proteins = []
@@ -42,6 +43,7 @@ class ProteinDataset(Dataset):
     def __len__(self):
         return len(self.proteins)
 
+#transformation of each protein sequence 
     def __getitem__(self, idx):
         prot = self.proteins[idx]
         seq_str = prot['sequence'].upper()  #make sure all amino acids are uppercase
@@ -50,7 +52,7 @@ class ProteinDataset(Dataset):
         seq_str = seq_str[:self.max_len]
 
         #Initializing tensor for sequence of shape (N, D)
-        #Where N is VOCAB_SIZE, and D is max_len
+        #Where N is VOCAB_SIZE (22), and D is max_len
         seq_tensor = torch.zeros((VOCAB_SIZE, self.max_len))
         mask = torch.zeros(self.max_len, dtype=torch.bool)
 
@@ -75,21 +77,20 @@ class DummyPredictor(nn.Module):
         super().__init__()
         self.num_go_terms = num_go_terms
         
-        # Empty layers - dummy model.
-        # We save parameters to ensure the interface matches the target model.
+        # Empty layers - dummy model
+        # We save parameters to ensure the interface matches the target model
 
         self.vocab_size = vocab_size
         self.max_len = max_len
 
     def forward(self, x, mask=None):
         """
-        
         Expected input: 
         x shape: (B, N, D) -> Batch Size, Vocab Size, Max Length
         mask shape: (B, D)
         
         As per the instruction, the interface accepts a mask, but the dummy model
-        simply returns random results in shape (B, P).
+        simply returns random results in shape (B, P), where B is batch size and P is GO vocabulary size for the given ontology
         """
         batch_size = x.size(0)
         
@@ -128,7 +129,7 @@ def run_prediction_pipeline(fasta_path: str, output_csv: str, batch_size: int = 
     with torch.no_grad():
         for batch_ids, batch_x, batch_mask in dataloader:
             
-            # batch_x has shape: (B, 22, 1024)
+            # batch_x has shape: (B=32, N=22, D=1024)
             
             for ontology, model in models.items():
                 go_terms = GO_VOCABULARY[ontology]
@@ -156,7 +157,7 @@ def run_prediction_pipeline(fasta_path: str, output_csv: str, batch_size: int = 
 if __name__ == "__main__":
     # Test run of the pipeline
 
-    INPUT_FASTA = "data/processed/proteins.fasta" 
+    INPUT_FASTA = "data/processed/sample.fasta" #"data/processed/proteins.fasta" 
     OUTPUT_CSV = "predictions.csv"
     
     if Path(INPUT_FASTA).exists():
