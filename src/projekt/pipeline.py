@@ -1,9 +1,12 @@
 import skbio
 import torch
 import torch.nn as nn
+import numpy as np
 import pandas as pd
 from torch.utils.data import Dataset, DataLoader
 from pathlib import Path
+
+from projekt.merge import write_fasta
 
 
 torch.manual_seed(42)
@@ -123,49 +126,43 @@ def run_prediction_pipeline(fasta_path: str, output_csv: str, batch_size: int = 
     for model in models.values():
         model.eval()
 
-    results = []
-    
-    print("Prediction starts...")
-    with torch.no_grad():
+    print(f"Prediction starts, writing results to {output_csv}...")
+    with open(output_csv, "w") as output_file, torch.no_grad():
+        output_file.write("ProteinID,GOterm,Score\n")
+
         for batch_ids, batch_x, batch_mask in dataloader:
-            
+
             # batch_x has shape: (B=32, N=22, D=1024)
-            
+
             for ontology, model in models.items():
                 go_terms = GO_VOCABULARY[ontology]
-                
+
                 # Returns random scores (B,P) where B is batch size and P is number of GO terms for the ontology
                 scores = model(batch_x, mask=batch_mask)
-                
-                # We save each result (Protein -> GO Term -> Score)
-                for i, prot_id in enumerate(batch_ids):
-                    for j, term in enumerate(go_terms):
-                        results.append({
-                            "ProteinID": prot_id,
-                            "GOterm": term,
-                            "Score": round(scores[i, j].item(), 4) # Rounding to 4 decimal places for better readability
-                        })
-                        
-    # Export to CSV file
-    print(f"Writing results to {output_csv}...")
-    df = pd.DataFrame(results)
-    df.to_csv(output_csv, index=False)
+
+                # One row per (Protein -> GO Term -> Score), appended batch by batch,
+                # so the full table (millions of rows) never has to fit in memory
+                pd.DataFrame({
+                    "ProteinID": np.repeat(batch_ids, len(go_terms)),
+                    "GOterm": np.tile(go_terms, len(batch_ids)),
+                    "Score": scores.flatten().numpy().round(4),  # 4 decimal places for better readability
+                }).to_csv(output_file, header=False, index=False)
+
     print("Results written to CSV")
 
 # RUN PIPELINE
 
 if __name__ == "__main__":
-    # Test run of the pipeline
+    # Demo run of the pipeline on the whole test split (random predictions)
 
-    INPUT_FASTA = "data/processed/sample.fasta" #"data/processed/proteins.fasta" 
+    TEST_SPLIT = Path("data/splits/test.tsv")
+    INPUT_FASTA = Path("data/splits/test.fasta")
     OUTPUT_CSV = "predictions.csv"
-    
-    if Path(INPUT_FASTA).exists():
-        run_prediction_pipeline(
-            fasta_path=INPUT_FASTA,
-            output_csv=OUTPUT_CSV,
-            batch_size=32,
-            max_len=1024
-        )
-    else:
-        print(f"Error: File {INPUT_FASTA} does not exist. Please provide a valid path to the FASTA file.")
+
+    write_fasta(pd.read_csv(TEST_SPLIT, sep="\t", dtype=str), INPUT_FASTA)
+    run_prediction_pipeline(
+        fasta_path=str(INPUT_FASTA),
+        output_csv=OUTPUT_CSV,
+        batch_size=32,
+        max_len=1024
+    )

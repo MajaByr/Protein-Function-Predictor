@@ -16,3 +16,9 @@ zad_1.md
 # Raw (uncompressed) GAF files - only the .gaf.gz versions are tracked
 data/GAF/*.gaf
 
+
+# Evaluation: generated, large (predictions.csv is ~750 MB) - recreate with the steps in README.md
+predictions.csv
+evaluation/*
+!evaluation/evaluation_example.ipynb
+data/splits/test.fasta
